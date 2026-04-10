@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SpeakAI — English Speaking Coach</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo">
+        <span class="logo-icon">◈</span>
+        <span class="logo-text">SpeakAI</span>
+      </div>
+      <div class="status-bar">
+        <span class="status-dot active"></span>
+        <span class="status-label">AI Ready</span>
+      </div>
+    </header>
+
+    <!-- Main Chat Area -->
+    <main class="chat-area" id="chatArea">
+      <!-- AI Welcome Message -->
+      <div class="message ai-message">
+        <div class="message-avatar">AI</div>
+        <div class="message-body">
+          <div class="ai-bubble">
+            <div class="message-text">Hello! I'm your English speaking coach. Let's start with something simple — tell me about your day.</div>
+            <button class="tts-btn replay-btn" title="Play audio">🔊</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- User Message Example -->
+      <div class="message user-message">
+        <div class="message-body">
+          <div class="speech-bubble">
+            <div class="speech-col">
+              <div class="user-speech-line">I went to the supermarket today to buy some things.</div>
+            </div>
+            <button class="tts-btn replay-btn" title="Play original">🔊</button>
+          </div>
+          <div class="message-feedback">
+            <div class="feedback-item correction">
+              <span class="feedback-icon">✦</span>
+              <strong>Grammar:</strong> Correct! Good use of simple past tense.
+            </div>
+            <div class="feedback-item native">
+              <span class="feedback-icon">◆</span>
+              <strong>More natural:</strong> "I went grocery shopping today."
+              <button class="tts-btn small" title="Play">🔊</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Input Area -->
+    <footer class="input-area">
+      <div class="input-bar">
+        <div class="input-hint" id="inputHint">Press and hold to speak</div>
+        <button class="mic-btn" id="micBtn">
+          <span class="mic-icon">🎙</span>
+          <span class="mic-ripple"></span>
+        </button>
+        <div class="waveform" id="waveform">
+          <span></span><span></span><span></span><span></span><span></span>
+          <span></span><span></span><span></span><span></span><span></span>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

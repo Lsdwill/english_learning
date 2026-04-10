@@ -1,0 +1,18 @@
+{
+  "expo": {
+    "name": "SpeakAI",
+    "slug": "speakai",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "speakai",
+    "platforms": ["android"],
+    "android": {
+      "package": "com.speakai.app",
+      "permissions": ["RECORD_AUDIO", "INTERNET"]
+    },
+    "plugins": [
+      "expo-router",
+      ["expo-av", { "microphonePermission": "SpeakAI needs microphone access for voice input." }]
+    ]
+  }
+}
