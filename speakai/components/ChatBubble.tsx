@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import SelectableText from '@/components/SelectableText';
 
 export type Message =
-  | { type: 'userTurn'; text: string; grammar: string; native: string; favorited?: boolean; onReplay?: () => void; onPlayNative?: () => void; onFavorite?: () => Promise<void> | void; onPolish?: () => void }
+  | { type: 'userTurn'; text: string; grammar: string; native: string; analyzing?: boolean; favorited?: boolean; onReplay?: () => void; onPlayNative?: () => void; onFavorite?: () => Promise<void> | void; onPolish?: () => void }
   | { type: 'ai'; text: string; onPlay?: () => void }
   | { type: 'thinking' };
 
@@ -25,7 +26,7 @@ export default function ChatBubble({ message }: Props) {
       <View style={styles.aiRow}>
         <View style={styles.avatar}><Text style={styles.avatarText}>AI</Text></View>
         <View style={styles.aiBubble}>
-          <Text style={styles.aiText}>{message.text}</Text>
+          <SelectableText style={styles.aiText}>{message.text}</SelectableText>
           <TouchableOpacity onPress={message.onPlay} style={styles.playBtn}>
             <Text style={styles.playIcon}>🔊</Text>
           </TouchableOpacity>
@@ -68,31 +69,39 @@ export default function ChatBubble({ message }: Props) {
           {/* Grammar */}
           <View style={styles.feedbackRow}>
             <Text style={styles.feedbackIcon}>✦</Text>
-            <Text style={styles.correctionText} numberOfLines={0}>
-              <Text style={styles.label}>Grammar: </Text>{message.grammar}
-            </Text>
+            {message.analyzing ? (
+              <Text style={[styles.correctionText, { opacity: 0.5 }]}>Analyzing…</Text>
+            ) : (
+              <Text style={styles.correctionText} numberOfLines={0}>
+                <Text style={styles.label}>Grammar: </Text>{message.grammar}
+              </Text>
+            )}
           </View>
 
           {/* More natural */}
           <View style={styles.feedbackRow}>
             <Text style={styles.feedbackIcon}>◆</Text>
-            <View style={{ flex: 1 }}>
-              <TouchableOpacity onPress={message.onPolish} activeOpacity={0.7}>
-                <Text style={styles.nativeText} numberOfLines={0}>
-                  <Text style={styles.label}>More natural: </Text>
-                  <Text style={styles.nativeText}>{message.native}</Text>
-                  <Text style={styles.polishHint}> ›</Text>
-                </Text>
-              </TouchableOpacity>
-              <View style={{ flexDirection: 'row', gap: 8, marginTop: 6 }}>
-                <TouchableOpacity onPress={message.onPlayNative} style={styles.playBtn}>
-                  <Text style={styles.playIcon}>🔊</Text>
+            {message.analyzing ? (
+              <Text style={[styles.nativeText, { opacity: 0.5 }]}>Polishing…</Text>
+            ) : (
+              <View style={{ flex: 1 }}>
+                <TouchableOpacity onPress={message.onPolish} activeOpacity={0.7}>
+                  <Text style={styles.nativeText} numberOfLines={0}>
+                    <Text style={styles.label}>More natural: </Text>
+                    <Text style={styles.nativeText}>{message.native}</Text>
+                    <Text style={styles.polishHint}> ›</Text>
+                  </Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={message.onPolish} style={[styles.playBtn, styles.polishBtn]}>
-                  <Text style={styles.polishBtnText}>Polish ✦</Text>
-                </TouchableOpacity>
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 6 }}>
+                  <TouchableOpacity onPress={message.onPlayNative} style={styles.playBtn}>
+                    <Text style={styles.playIcon}>🔊</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={message.onPolish} style={[styles.playBtn, styles.polishBtn]}>
+                    <Text style={styles.polishBtnText}>Polish ✦</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-            </View>
+            )}
           </View>
         </View>
       </View>
@@ -132,12 +141,12 @@ const styles = StyleSheet.create({
   },
   avatarText: { color: '#fff', fontSize: 11, fontWeight: '700' },
   aiBubble: {
-    flex: 1, flexDirection: 'row', alignItems: 'center',
+    flex: 1, flexDirection: 'row', alignItems: 'flex-start',
     backgroundColor: C.aiBubble,
     borderWidth: 1, borderColor: 'rgba(0,200,255,0.15)',
     borderRadius: 14, padding: 12, gap: 8,
   },
-  aiText: { flex: 1, color: C.text, fontSize: 15, lineHeight: 22 },
+  aiText: { flex: 1, color: C.text, fontSize: 15, lineHeight: 22, padding: 0, backgroundColor: 'transparent' },
   mutedText: { color: C.muted, fontSize: 15 },
 
   // User card — single bubble with speech + feedback

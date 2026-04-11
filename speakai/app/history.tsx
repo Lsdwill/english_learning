@@ -6,18 +6,14 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import {
-  getSessions, getMessages, deleteSession, updateSessionPreview,
-  LocalSession, LocalMessage,
+  getSessions, deleteSession, updateSessionPreview,
+  LocalSession,
 } from '@/services/localStore';
 
 export default function HistoryScreen() {
   const router = useRouter();
   const [sessions, setSessions] = useState<LocalSession[]>([]);
   const [loading, setLoading] = useState(true);
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const [detail, setDetail] = useState<Record<string, LocalMessage[]>>({});
-
-  // Rename modal state
   const [renaming, setRenaming] = useState<LocalSession | null>(null);
   const [renameText, setRenameText] = useState('');
 
@@ -28,45 +24,25 @@ export default function HistoryScreen() {
       .finally(() => setLoading(false));
   }, []);
 
-  const toggleSession = useCallback(async (id: string) => {
-    if (expanded === id) { setExpanded(null); return; }
-    setExpanded(id);
-    if (!detail[id]) {
-      const msgs = await getMessages(id).catch(() => []);
-      setDetail(prev => ({ ...prev, [id]: msgs }));
-    }
-  }, [expanded, detail]);
-
   const handleLongPress = useCallback((item: LocalSession) => {
-    Alert.alert(
-      item.preview || 'Conversation',
-      'What would you like to do?',
-      [
-        {
-          text: 'Rename',
-          onPress: () => { setRenaming(item); setRenameText(item.preview || ''); },
-        },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            Alert.alert('Delete', 'Delete this conversation?', [
-              { text: 'Cancel', style: 'cancel' },
-              {
-                text: 'Delete', style: 'destructive',
-                onPress: async () => {
-                  await deleteSession(item.id);
-                  setSessions(prev => prev.filter(s => s.id !== item.id));
-                  if (expanded === item.id) setExpanded(null);
-                },
-              },
-            ]);
+    Alert.alert(item.preview || 'Conversation', 'What would you like to do?', [
+      { text: 'Rename', onPress: () => { setRenaming(item); setRenameText(item.preview || ''); } },
+      {
+        text: 'Delete', style: 'destructive',
+        onPress: () => Alert.alert('Delete', 'Delete this conversation?', [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete', style: 'destructive',
+            onPress: async () => {
+              await deleteSession(item.id);
+              setSessions(prev => prev.filter(s => s.id !== item.id));
+            },
           },
-        },
-        { text: 'Cancel', style: 'cancel' },
-      ]
-    );
-  }, [expanded]);
+        ]),
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  }, []);
 
   const confirmRename = useCallback(async () => {
     if (!renaming) return;
@@ -104,48 +80,27 @@ export default function HistoryScreen() {
           keyExtractor={item => item.id}
           contentContainerStyle={{ padding: 16, gap: 10 }}
           renderItem={({ item }) => (
-            <View style={s.card}>
-              <TouchableOpacity
-                style={s.cardHeader}
-                onPress={() => toggleSession(item.id)}
-                onLongPress={() => handleLongPress(item)}
-                delayLongPress={400}
-              >
+            <TouchableOpacity
+              style={s.card}
+              onPress={() => router.push({ pathname: '/chat', params: { sessionId: item.id } })}
+              onLongPress={() => handleLongPress(item)}
+              delayLongPress={400}
+              activeOpacity={0.75}
+            >
+              <View style={s.cardHeader}>
                 <View style={{ flex: 1 }}>
                   <Text style={s.cardTitle} numberOfLines={1}>
                     {item.preview || 'New Conversation'}
                   </Text>
                   <Text style={s.cardDate}>{formatDate(item.created_at)}</Text>
                 </View>
-                <Text style={[s.chevron, expanded === item.id && s.chevronOpen]}>›</Text>
-              </TouchableOpacity>
-
-              {expanded === item.id && (
-                <View style={s.messages}>
-                  {(detail[item.id] ?? []).map(msg => (
-                    <View key={msg.id} style={[s.msgRow, msg.role === 'ai' ? s.aiRow : s.userRow]}>
-                      <View style={[s.bubble, msg.role === 'ai' ? s.aiBubble : s.userBubble]}>
-                        <Text style={s.msgText}>{msg.text}</Text>
-                        {msg.native ? (
-                          <Text style={s.nativeText}>↳ {msg.native}</Text>
-                        ) : null}
-                      </View>
-                    </View>
-                  ))}
-                  <TouchableOpacity
-                    style={s.continueBtn}
-                    onPress={() => router.push({ pathname: '/chat', params: { sessionId: item.id } })}
-                  >
-                    <Text style={s.continueBtnText}>Continue conversation ›</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
+                <Text style={s.chevron}>›</Text>
+              </View>
+            </TouchableOpacity>
           )}
         />
       )}
 
-      {/* Rename modal */}
       <Modal visible={!!renaming} transparent animationType="fade">
         <View style={s.overlay}>
           <View style={s.modal}>
@@ -185,6 +140,7 @@ const s = StyleSheet.create({
   backText: { color: '#00c8ff', fontSize: 16 },
   title: { color: '#e2eaf4', fontSize: 17, fontWeight: '600' },
   empty: { color: '#5a7a99', textAlign: 'center', marginTop: 60, fontSize: 15 },
+  cardDate: { color: '#5a7a99', fontSize: 11, marginTop: 3 },
   card: {
     backgroundColor: '#0d1e30',
     borderWidth: 1, borderColor: 'rgba(123,94,167,0.25)',
@@ -195,27 +151,7 @@ const s = StyleSheet.create({
     padding: 16, gap: 8,
   },
   cardTitle: { color: '#e2eaf4', fontSize: 15, fontWeight: '600' },
-  cardDate: { color: '#5a7a99', fontSize: 11, marginTop: 3 },
   chevron: { color: '#7b5ea7', fontSize: 22 },
-  chevronOpen: { transform: [{ rotate: '90deg' }] },
-  messages: { borderTopWidth: 1, borderTopColor: 'rgba(0,200,255,0.08)', padding: 12, gap: 8 },
-  msgRow: { flexDirection: 'row' },
-  aiRow: { justifyContent: 'flex-start' },
-  userRow: { justifyContent: 'flex-end' },
-  bubble: { maxWidth: '85%', borderRadius: 12, padding: 10 },
-  aiBubble: { backgroundColor: '#0a1525', borderWidth: 1, borderColor: 'rgba(0,200,255,0.12)' },
-  userBubble: { backgroundColor: '#0a1f35', borderWidth: 1, borderColor: 'rgba(123,94,167,0.25)' },
-  msgText: { color: '#e2eaf4', fontSize: 13, lineHeight: 20 },
-  nativeText: { color: '#fcd34d', fontSize: 12, marginTop: 4 },
-  continueBtn: {
-    marginTop: 10, alignSelf: 'flex-end',
-    paddingHorizontal: 14, paddingVertical: 8,
-    backgroundColor: 'rgba(0,200,255,0.08)',
-    borderWidth: 1, borderColor: 'rgba(0,200,255,0.25)',
-    borderRadius: 10,
-  },
-  continueBtnText: { color: '#00c8ff', fontSize: 13, fontWeight: '600' },
-  // Modal
   overlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'center', alignItems: 'center',

@@ -2,6 +2,20 @@ import mysql from 'mysql2/promise';
 
 const pool = mysql.createPool(process.env.DATABASE_URL || 'mysql://root:123456@127.0.0.1:3309/ink');
 
+/** Add a column only if it doesn't already exist (MySQL 8.0 compatible) */
+async function addColumnIfMissing(conn, table, column, definition) {
+  const dbName = (await conn.query('SELECT DATABASE() AS db'))[0][0].db;
+  const [rows] = await conn.query(
+    `SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+    [dbName, table, column]
+  );
+  if (rows.length === 0) {
+    await conn.query(`ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${definition}`);
+    console.log(`[db] migrated: ${table}.${column} added`);
+  }
+}
+
 async function initDB() {
   const conn = await pool.getConnection();
   try {
@@ -25,13 +39,9 @@ async function initDB() {
         FOREIGN KEY (session_id) REFERENCES sessions(id)
       )
     `);
+    await addColumnIfMissing(conn, 'messages', 'oss_key', 'VARCHAR(512) DEFAULT NULL');
+    await addColumnIfMissing(conn, 'messages', 'expires_at', 'DATETIME GENERATED ALWAYS AS (DATE_ADD(created_at, INTERVAL 90 DAY)) STORED');
 
-    // Migrate: add oss_key column if it doesn't exist (for existing tables)
-    await conn.query(`
-      ALTER TABLE messages
-        ADD COLUMN IF NOT EXISTS oss_key VARCHAR(512) DEFAULT NULL,
-        ADD COLUMN IF NOT EXISTS expires_at DATETIME AS (DATE_ADD(created_at, INTERVAL 90 DAY)) STORED
-    `).catch(() => {}); // ignore if columns already exist
     await conn.query(`
       CREATE TABLE IF NOT EXISTS favorites (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -41,12 +51,38 @@ async function initDB() {
         native TEXT,
         ai_reply TEXT,
         user_audio_url VARCHAR(512) DEFAULT NULL,
-        ai_audio_url VARCHAR(512) DEFAULT NULL,
         text_hash VARCHAR(64) GENERATED ALWAYS AS (SHA2(user_text, 256)) STORED,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         UNIQUE KEY uq_user_text (text_hash(64))
       )
     `);
+    await addColumnIfMissing(conn, 'favorites', 'user_audio_url', 'VARCHAR(512) DEFAULT NULL');
+
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS polish_favorites (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        original TEXT NOT NULL,
+        polished TEXT NOT NULL,
+        explanation TEXT,
+        mode ENUM('casual', 'business') DEFAULT 'casual',
+        user_oss_key VARCHAR(512) DEFAULT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await addColumnIfMissing(conn, 'polish_favorites', 'user_oss_key', 'VARCHAR(512) DEFAULT NULL');
+
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS vocabulary (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        word TEXT NOT NULL,
+        word_hash VARCHAR(64) GENERATED ALWAYS AS (SHA2(word, 256)) STORED,
+        explanation TEXT NOT NULL,
+        example TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_word (word_hash(64))
+      )
+    `);
+
     console.log('[db] Tables ready');
   } finally {
     conn.release();

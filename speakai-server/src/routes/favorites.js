@@ -1,35 +1,25 @@
 import { Router } from 'express';
-import multer from 'multer';
-import OSS from 'ali-oss';
 import pool from '../db.js';
-import { OSS_ACCESS_KEY_ID, OSS_ACCESS_KEY_SECRET, OSS_BUCKET, OSS_REGION } from '../config.js';
 
 const router = Router();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
-
-const ossClient = new OSS({
-  region: `oss-${OSS_REGION}`,
-  accessKeyId: OSS_ACCESS_KEY_ID,
-  accessKeySecret: OSS_ACCESS_KEY_SECRET,
-  bucket: OSS_BUCKET,
-});
 
 // POST /favorites — upsert (prevents duplicates by user_text hash)
 router.post('/', async (req, res) => {
-  const { user_text, grammar, native, ai_reply } = req.body;
+  const { user_text, grammar, native, ai_reply, user_audio_url } = req.body;
   if (!user_text) return res.status(400).json({ error: 'user_text required' });
+  console.log('[favorites] POST user_audio_url:', user_audio_url?.slice(0, 60) ?? 'null');
   try {
     const [result] = await pool.query(
-      `INSERT INTO favorites (user_text, grammar, native, ai_reply)
-       VALUES (?, ?, ?, ?)
+      `INSERT INTO favorites (user_text, grammar, native, ai_reply, user_audio_url)
+       VALUES (?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE
-         grammar   = VALUES(grammar),
-         native    = VALUES(native),
-         ai_reply  = VALUES(ai_reply),
-         created_at = CURRENT_TIMESTAMP`,
-      [user_text, grammar ?? null, native ?? null, ai_reply ?? null]
+         grammar        = VALUES(grammar),
+         native         = VALUES(native),
+         ai_reply       = VALUES(ai_reply),
+         user_audio_url = VALUES(user_audio_url),
+         created_at     = CURRENT_TIMESTAMP`,
+      [user_text, grammar ?? null, native ?? null, ai_reply ?? null, user_audio_url ?? null]
     );
-    // insertId is 0 on update, fetch the actual row id
     const id = result.insertId || (await pool.query(
       'SELECT id FROM favorites WHERE text_hash = SHA2(?, 256)', [user_text]
     ))[0][0]?.id;
@@ -39,42 +29,8 @@ router.post('/', async (req, res) => {
   }
 });
 
-// POST /favorites/:id/audio — upload user/ai audio to OSS, update URLs
-router.post('/:id/audio', upload.fields([
-  { name: 'user_audio', maxCount: 1 },
-  { name: 'ai_audio', maxCount: 1 },
-]), async (req, res) => {
-  const { id } = req.params;
-  const files = req.files;
-  const updates = [];
-  const values = [];
-
-  try {
-    for (const field of ['user_audio', 'ai_audio']) {
-      const file = files?.[field]?.[0];
-      if (!file) continue;
-      const ossKey = `speakai-audio/fav-${id}-${field}-${Date.now()}.m4a`;
-      await ossClient.put(ossKey, file.buffer, {
-        headers: { 'Content-Type': 'audio/m4a' },
-      });
-      const url = ossClient.signatureUrl(ossKey, { expires: 365 * 24 * 3600 });
-      const col = field === 'user_audio' ? 'user_audio_url' : 'ai_audio_url';
-      updates.push(`${col} = ?`);
-      values.push(url);
-    }
-
-    if (updates.length === 0) return res.status(400).json({ error: 'no audio files provided' });
-
-    values.push(id);
-    await pool.query(`UPDATE favorites SET ${updates.join(', ')} WHERE id = ?`, values);
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
 // GET /favorites
-router.get('/', async (req, res) => {
+router.get('/', async (_req, res) => {
   try {
     const [rows] = await pool.query('SELECT * FROM favorites ORDER BY created_at DESC');
     res.json(rows);
@@ -93,7 +49,7 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-// DELETE /favorites/by-text — delete by user_text hash
+// DELETE /favorites/by-text
 router.delete('/by-text', async (req, res) => {
   const { user_text } = req.body;
   if (!user_text) return res.status(400).json({ error: 'user_text required' });

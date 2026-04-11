@@ -6,8 +6,8 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 
 import ChatBubble, { Message } from '@/components/ChatBubble';
 import MicButton from '@/components/MicButton';
-import { callLLM, transcribeAudio, synthesizeSpeech, addFavorite, uploadFavoriteAudio, deleteFavoriteByText, summarizeSession } from '@/services/api';import {
-  createLocalSession, getMessages, appendMessage, updateMessageAudio,
+import { callLLMReply, callLLMAnalyze, transcribeAudio, synthesizeSpeech, addFavorite, deleteFavoriteByText, summarizeSession } from '@/services/api';import {
+  createLocalSession, getMessages, appendMessage,
   updateSessionPreview, LocalMessage, getFavoritedTexts, addFavoritedText, removeFavoritedText,
 } from '@/services/localStore';
 
@@ -26,8 +26,10 @@ export default function ChatScreen() {
   const lastAiReplyRef = useRef<string>('');
   const lastAiAudioUriRef = useRef<string | null>(null);
 
-  const scrollToBottom = useCallback(() => {
-    setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+  const initialScrollDoneRef = useRef(false);
+
+  const scrollToBottom = useCallback((animated = true) => {
+    setTimeout(() => listRef.current?.scrollToEnd({ animated }), 100);
   }, []);
 
   const playUri = useCallback(async (uri: string) => {
@@ -68,7 +70,7 @@ export default function ChatScreen() {
       onReplay: hasPlayableAudio ? () => playUri(m.audioUri!) : undefined,
       onPlayNative: m.native ? () => playTTS(m.native!) : undefined,
       onFavorite: () => handleFavorite(m.text, m.grammar ?? '', m.native ?? '', m.audioUri ?? null, favSet.has(m.text)),
-      onPolish: () => router.push({ pathname: '/polish', params: { text: m.text } }),
+      onPolish: () => router.push({ pathname: '/polish', params: { text: m.text, ossKey: m.audioUri ?? '' } }),
     };
   }, [playTTS, playUri]);
 
@@ -77,10 +79,10 @@ export default function ChatScreen() {
     if (sessionId) {
       // Resume existing session from local store — load favs to mark starred items
       Promise.all([getMessages(sessionId), getFavoritedTexts()]).then(([msgs, favSet]) => {
+        initialScrollDoneRef.current = false;
         setMessages(msgs.map(m => toDisplayMsg(m, favSet)));
         const lastAi = [...msgs].reverse().find(m => m.role === 'ai');
         if (lastAi) lastAiReplyRef.current = lastAi.text;
-        scrollToBottom();
       }).catch(e => console.warn('load history error', e));
     } else {
       // New session — show welcome, create session lazily on first message
@@ -111,13 +113,14 @@ export default function ChatScreen() {
       // Favorite
       setFavoritedTexts(prev => new Set(prev).add(userText));
       try {
-        const { id } = await addFavorite({
+        // userAudioUri is the OSS URL if it starts with http, otherwise local path (no audio)
+        const ossAudioUrl = userAudioUri?.startsWith('http') ? userAudioUri : undefined;
+        await addFavorite({
           user_text: userText, grammar, native,
           ai_reply: lastAiReplyRef.current,
+          user_audio_url: ossAudioUrl,
         });
         await addFavoritedText(userText);
-        uploadFavoriteAudio(id, userAudioUri, lastAiAudioUriRef.current)
-          .catch(e => console.warn('uploadFavoriteAudio error', e));
       } catch (e) {
         console.warn('addFavorite error', e);
         setFavoritedTexts(prev => { const s = new Set(prev); s.delete(userText); return s; });
@@ -154,124 +157,117 @@ export default function ChatScreen() {
   }, []);
 
   const stopRecording = useCallback(async () => {
-    setRecording(false);
-    setStatusText('Transcribing…');
+      setRecording(false);
+      setStatusText('Transcribing…');
 
-    try {
-      const rec = recordingRef.current;
-      recordingRef.current = null;
-      if (!rec) { setStatusText('Tap to speak'); return; }
-
-      const localUri = rec.getURI();
-      await rec.stopAndUnloadAsync();
-      if (!localUri) { setStatusText('Tap to speak'); return; }
-
-      setMessages(prev => [...prev, { type: 'thinking' }]);
-
-      // STT
-      let transcript: string;
-      let ossKey: string | undefined;
       try {
-        const r = await transcribeAudio(localUri);
-        transcript = r.transcript;
-        ossKey = r.oss_key;
-        // Store OSS URL immediately so history replay works
-        if (r.oss_url) {
-          ossKey = r.oss_url; // reuse ossKey var to carry the URL
-          console.log('[chat] oss_url received:', r.oss_url.slice(0, 80));
-        } else {
-          console.warn('[chat] no oss_url in STT response, r:', JSON.stringify(r).slice(0, 200));
+        const rec = recordingRef.current;
+        recordingRef.current = null;
+        if (!rec) { setStatusText('Tap to speak'); return; }
+
+        const localUri = rec.getURI();
+        await rec.stopAndUnloadAsync();
+        if (!localUri) { setStatusText('Tap to speak'); return; }
+
+        setMessages(prev => [...prev, { type: 'thinking' }]);
+
+        // STT — wait for transcript first
+        let transcript: string;
+        let ossKey: string | undefined;
+        try {
+          const r = await transcribeAudio(localUri);
+          transcript = r.transcript;
+          ossKey = r.oss_url ?? r.oss_key;
+          if (ossKey) console.log('[chat] oss_url received:', ossKey.slice(0, 80));
+          else console.warn('[chat] no oss_url in STT response');
+        } catch (e: any) {
+          setMessages(prev => prev.filter(m => m.type !== 'thinking'));
+          setMessages(prev => [...prev, { type: 'ai', text: `Transcription error: ${e.message}` }]);
+          setStatusText('Tap to speak');
+          return;
         }
-      } catch (e: any) {
-        setMessages(prev => prev.filter(m => m.type !== 'thinking'));
-        setMessages(prev => [...prev, { type: 'ai', text: `Transcription error: ${e.message}` }]);
-        setStatusText('Tap to speak');
-        return;
-      }
 
-      if (!transcript.trim()) {
-        setMessages(prev => prev.filter(m => m.type !== 'thinking'));
-        setStatusText('Tap to speak');
-        return;
-      }
+        if (!transcript.trim()) {
+          setMessages(prev => prev.filter(m => m.type !== 'thinking'));
+          setStatusText('Tap to speak');
+          return;
+        }
 
-      setMessages(prev => prev.filter(m => m.type !== 'thinking'));
-      setMessages(prev => [...prev, { type: 'thinking' }]);
+        const capturedUri = localUri;
+        const capturedOssUrl = ossKey;
 
-      // LLM
-      let llmResult: Awaited<ReturnType<typeof callLLM>>;
-      try {
-        llmResult = await callLLM(transcript);
-      } catch (e: any) {
-        setMessages(prev => prev.filter(m => m.type !== 'thinking'));
-        setMessages(prev => [...prev,
-          { type: 'userTurn', text: transcript, grammar: '—', native: '—',
-            onReplay: () => playUri(localUri),
-            onFavorite: () => handleFavorite(transcript, '—', '—', localUri) },
-          { type: 'ai', text: `Error: ${e.message}` },
+        // STT done — immediately show user message with analyzing state + AI thinking bubble
+        setMessages(prev => [
+          ...prev.filter(m => m.type !== 'thinking'),
+          {
+            type: 'userTurn',
+            text: transcript,
+            grammar: '',
+            native: '',
+            analyzing: true,
+            favorited: favoritedTexts.has(transcript),
+            onReplay: capturedUri ? () => playUri(capturedUri) : undefined,
+            onFavorite: () => handleFavorite(transcript, '', '', capturedOssUrl ?? capturedUri, favoritedTexts.has(transcript)),
+            onPolish: () => router.push({ pathname: '/polish', params: { text: transcript, ossKey: capturedOssUrl ?? '' } }),
+          },
+          { type: 'thinking' },
         ]);
+        scrollToBottom();
         setStatusText('Tap to speak');
-        return;
-      }
 
-      setMessages(prev => prev.filter(m => m.type !== 'thinking'));
+        // Fire both LLM tasks in parallel
+        const [replyResult, analyzeResult] = await Promise.allSettled([
+          callLLMReply(transcript),
+          callLLMAnalyze(transcript),
+        ]);
 
-      // Persist to local store
-      const sid = await ensureSession();
-      const userMsg = await appendMessage(sid, {
-        role: 'user', text: transcript,
-        grammar: llmResult.grammar, native: llmResult.native,
-        audioUri: ossKey ?? localUri,
-      });
-      console.log('[chat] saved userMsg audioUri:', (ossKey ?? localUri)?.slice(0, 80));
-      await appendMessage(sid, { role: 'ai', text: llmResult.ai_reply });
+        const aiReply = replyResult.status === 'fulfilled' ? replyResult.value.ai_reply : 'Sorry, I had trouble responding.';
+        const grammar = analyzeResult.status === 'fulfilled' ? analyzeResult.value.grammar : '—';
+        const native = analyzeResult.status === 'fulfilled' ? analyzeResult.value.native : '—';
 
-      // Regenerate title every 3 user messages using full conversation context
-      const allMsgs = await getMessages(sid);
-      const userMsgs = allMsgs.filter(m => m.role === 'user');
-      console.log('[chat] user messages count:', userMsgs.length);
-      // Trigger on 1st, then every 3 messages (1, 4, 7, 10... and also 3, 6, 9...)
-      // Simplified: always regenerate, but throttle — only when count is 1 or divisible by 3
-      const shouldUpdate = userMsgs.length === 1 || userMsgs.length % 3 === 0;
-      if (shouldUpdate) {
-        const context = userMsgs.map(m => m.text).join(' / ');
-        console.log('[chat] generating title, msgs:', userMsgs.length, 'context:', context.slice(0, 80));
-        summarizeSession(context).then(title => {
-          console.log('[chat] generated title:', title);
-          updateSessionPreview(sid, title);
-        }).catch(e => {
-          console.warn('[chat] summarize error:', e);
-          if (userMsgs.length === 1) updateSessionPreview(sid, transcript.slice(0, 40));
+        // Replace thinking bubble with AI reply, update user message with analysis
+        setMessages(prev => {
+          const withoutThinking = prev.filter(m => m.type !== 'thinking');
+          return withoutThinking.map(m => {
+            if (m.type === 'userTurn' && m.text === transcript && m.analyzing) {
+              return {
+                ...m,
+                grammar,
+                native,
+                analyzing: false,
+                onPlayNative: () => playTTS(native),
+                onFavorite: () => handleFavorite(transcript, grammar, native, capturedOssUrl ?? capturedUri, favoritedTexts.has(transcript)),
+                onPolish: () => router.push({ pathname: '/polish', params: { text: transcript, ossKey: capturedOssUrl ?? '' } }),
+              };
+            }
+            return m;
+          }).concat([
+            { type: 'ai', text: aiReply, onPlay: () => playTTS(aiReply) },
+          ]);
         });
+
+        lastAiReplyRef.current = aiReply;
+        scrollToBottom();
+        playTTS(aiReply);
+
+        // Persist to local store (background)
+        ensureSession().then(async sid => {
+          await appendMessage(sid, { role: 'user', text: transcript, grammar, native, audioUri: capturedOssUrl ?? capturedUri });
+          await appendMessage(sid, { role: 'ai', text: aiReply });
+          const allMsgs = await getMessages(sid);
+          const userMsgs = allMsgs.filter(m => m.role === 'user');
+          if (userMsgs.length === 1 || userMsgs.length % 3 === 0) {
+            const context = userMsgs.map(m => m.text).join(' / ');
+            summarizeSession(context).then(title => updateSessionPreview(sid, title))
+              .catch(() => { if (userMsgs.length === 1) updateSessionPreview(sid, transcript.slice(0, 40)); });
+          }
+        }).catch(e => console.warn('[chat] persist error', e));
+
+      } catch (e) {
+        console.warn('stopRecording error', e);
+        setStatusText('Tap to speak');
       }
-
-      // OSS URL already stored in audioUri above — no need to update separately
-
-      const capturedUri = localUri;
-      setMessages(prev => [...prev,
-        {
-          type: 'userTurn',
-          text: transcript,
-          grammar: llmResult.grammar,
-          native: llmResult.native,
-          favorited: favoritedTexts.has(transcript),
-          onReplay: () => playUri(capturedUri),
-          onPlayNative: () => playTTS(llmResult.native),
-          onFavorite: () => handleFavorite(transcript, llmResult.grammar, llmResult.native, capturedUri, favoritedTexts.has(transcript)),
-          onPolish: () => router.push({ pathname: '/polish', params: { text: transcript } }),
-        },
-        { type: 'ai', text: llmResult.ai_reply, onPlay: () => playTTS(llmResult.ai_reply) },
-      ]);
-
-      lastAiReplyRef.current = llmResult.ai_reply;
-      scrollToBottom();
-      playTTS(llmResult.ai_reply);
-      setStatusText('Tap to speak');
-    } catch (e) {
-      console.warn('stopRecording error', e);
-      setStatusText('Tap to speak');
-    }
-  }, [ensureSession, playUri, playTTS, handleFavorite, favoritedTexts, scrollToBottom]);
+    }, [ensureSession, playUri, playTTS, handleFavorite, favoritedTexts, scrollToBottom]);
 
   const toggleRecording = useCallback(() => {
     recording ? stopRecording() : startRecording();
@@ -300,7 +296,14 @@ export default function ChatScreen() {
         renderItem={({ item }) => <ChatBubble message={item} />}
         contentContainerStyle={s.chatContent}
         style={s.chat}
-        onContentSizeChange={scrollToBottom}
+        onContentSizeChange={() => {
+          if (!initialScrollDoneRef.current) {
+            initialScrollDoneRef.current = true;
+            scrollToBottom(false); // 初次加载历史，不用动画，直接跳到底部
+          } else {
+            scrollToBottom(true);
+          }
+        }}
       />
       <View style={s.inputArea}>
         <Text style={s.hint}>{statusText}</Text>

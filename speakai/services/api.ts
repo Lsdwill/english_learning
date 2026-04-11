@@ -19,6 +19,26 @@ export async function callLLM(text: string): Promise<LLMResult> {
   return res.json();
 }
 
+export async function callLLMReply(text: string): Promise<{ ai_reply: string }> {
+  const res = await fetch(`${SERVER_URL}/llm/reply`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) throw new Error(`LLM reply error ${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
+export async function callLLMAnalyze(text: string): Promise<{ grammar: string; native: string }> {
+  const res = await fetch(`${SERVER_URL}/llm/analyze`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) throw new Error(`LLM analyze error ${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
 export async function transcribeAudio(localUri: string): Promise<{ transcript: string; oss_key?: string; oss_url?: string }> {
   const form = new FormData();
   form.append('audio', { uri: localUri, name: 'audio.m4a', type: 'audio/m4a' } as any);
@@ -118,7 +138,7 @@ export async function saveMessage(params: {
 
 // ── Favorites ─────────────────────────────────────────────
 export async function addFavorite(params: {
-  user_text: string; grammar?: string; native?: string; ai_reply?: string;
+  user_text: string; grammar?: string; native?: string; ai_reply?: string; user_audio_url?: string;
 }): Promise<{ id: number; updated: boolean }> {
   const res = await fetch(`${SERVER_URL}/favorites`, {
     method: 'POST',
@@ -127,27 +147,6 @@ export async function addFavorite(params: {
   });
   if (!res.ok) throw new Error(`addFavorite error ${res.status}`);
   return res.json();
-}
-
-/** Upload user recording + AI TTS audio to OSS for cloud sync */
-export async function uploadFavoriteAudio(
-  favoriteId: number,
-  userAudioUri: string | null,
-  aiAudioUri: string | null,
-): Promise<void> {
-  const form = new FormData();
-  if (userAudioUri) {
-    form.append('user_audio', { uri: userAudioUri, name: 'user.m4a', type: 'audio/m4a' } as any);
-  }
-  if (aiAudioUri) {
-    form.append('ai_audio', { uri: aiAudioUri, name: 'ai.mp3', type: 'audio/mpeg' } as any);
-  }
-  if (!userAudioUri && !aiAudioUri) return;
-
-  await fetch(`${SERVER_URL}/favorites/${favoriteId}/audio`, {
-    method: 'POST',
-    body: form,
-  });
 }
 
 export async function getFavorites(): Promise<Favorite[]> {
@@ -178,6 +177,102 @@ export interface DBMessage {
 export interface Favorite {
   id: number; user_text: string;
   grammar: string | null; native: string | null; ai_reply: string | null;
-  user_audio_url: string | null; ai_audio_url: string | null;
+  user_audio_url: string | null;
   created_at: string;
+}
+
+export interface PolishFavorite {
+  id: number;
+  original: string;
+  polished: string;
+  explanation: string | null;
+  mode: 'casual' | 'business';
+  user_oss_key: string | null;
+  created_at: string;
+}
+
+/**
+ * Get a playable local URI for an OSS key or a full signed URL.
+ * Cache: downloads to cacheDirectory as oss_<hash>.m4a, reuses on subsequent calls.
+ */
+export async function getOssAudioCached(ossKeyOrUrl: string): Promise<string> {
+  const hash = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, ossKeyOrUrl);
+  const cached = `${FileSystem.cacheDirectory}oss_${hash}.m4a`;
+  const info = await FileSystem.getInfoAsync(cached);
+  if (info.exists) return cached;
+
+  // If it's already a full URL (http/https), download directly; otherwise get signed URL first
+  const downloadUrl = ossKeyOrUrl.startsWith('http')
+    ? ossKeyOrUrl
+    : await getOssAudioUrl(ossKeyOrUrl);
+
+  const result = await FileSystem.downloadAsync(downloadUrl, cached);
+  if (result.status !== 200) {
+    await FileSystem.deleteAsync(cached, { idempotent: true });
+    throw new Error(`OSS download error ${result.status}`);
+  }
+  return result.uri;
+}
+
+export async function savePolishFavorite(params: {
+  original: string; polished: string; explanation?: string; mode: 'casual' | 'business'; user_oss_key?: string;
+}): Promise<{ id: number }> {
+  const res = await fetch(`${SERVER_URL}/polish-favorites`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) throw new Error(`savePolishFavorite error ${res.status}`);
+  return res.json();
+}
+
+export async function getPolishFavorites(): Promise<PolishFavorite[]> {
+  const res = await fetch(`${SERVER_URL}/polish-favorites`);
+  if (!res.ok) throw new Error(`getPolishFavorites error ${res.status}`);
+  return res.json();
+}
+
+export async function deletePolishFavorite(id: number): Promise<void> {
+  await fetch(`${SERVER_URL}/polish-favorites/${id}`, { method: 'DELETE' });
+}
+
+// ── Vocabulary ────────────────────────────────────────────
+export interface VocabularyItem {
+  id: number;
+  word: string;
+  explanation: string;
+  example: string | null;
+  created_at: string;
+}
+
+export async function explainWord(word: string): Promise<{ explanation: string; example: string }> {
+  const res = await fetch(`${SERVER_URL}/vocabulary/explain`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ word }),
+  });
+  if (!res.ok) throw new Error(`explainWord error ${res.status}`);
+  return res.json();
+}
+
+export async function saveVocabulary(params: {
+  word: string; explanation: string; example?: string;
+}): Promise<{ id: number }> {
+  const res = await fetch(`${SERVER_URL}/vocabulary`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) throw new Error(`saveVocabulary error ${res.status}`);
+  return res.json();
+}
+
+export async function getVocabulary(): Promise<VocabularyItem[]> {
+  const res = await fetch(`${SERVER_URL}/vocabulary`);
+  if (!res.ok) throw new Error(`getVocabulary error ${res.status}`);
+  return res.json();
+}
+
+export async function deleteVocabulary(id: number): Promise<void> {
+  await fetch(`${SERVER_URL}/vocabulary/${id}`, { method: 'DELETE' });
 }

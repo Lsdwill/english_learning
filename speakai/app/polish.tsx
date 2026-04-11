@@ -5,19 +5,21 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { polishText, synthesizeSpeech } from '@/services/api';
+import { polishText, synthesizeSpeech, savePolishFavorite } from '@/services/api';
 import { Audio } from 'expo-av';
+import SelectableText from '@/components/SelectableText';
 
 type Mode = 'casual' | 'business';
 
 export default function PolishScreen() {
   const router = useRouter();
-  const { text } = useLocalSearchParams<{ text: string }>();
+  const { text, ossKey } = useLocalSearchParams<{ text: string; ossKey?: string }>();
 
   const [mode, setMode] = useState<Mode>('casual');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ result: string; explanation: string } | null>(null);
   const [error, setError] = useState('');
+  const [saved, setSaved] = useState(false);
 
   const handlePolish = useCallback(async (selectedMode: Mode) => {
     if (!text) return;
@@ -25,6 +27,7 @@ export default function PolishScreen() {
     setLoading(true);
     setError('');
     setResult(null);
+    setSaved(false);
     try {
       const r = await polishText(text, selectedMode);
       setResult(r);
@@ -34,6 +37,15 @@ export default function PolishScreen() {
       setLoading(false);
     }
   }, [text]);
+
+  const handleSave = useCallback(async () => {
+    if (!result || !text) return;
+    await savePolishFavorite({
+      original: text, polished: result.result, explanation: result.explanation,
+      mode, user_oss_key: ossKey ?? undefined,
+    });
+    setSaved(true);
+  }, [result, text, mode, ossKey]);
 
   const playTTS = useCallback(async (t: string) => {
     try {
@@ -103,9 +115,9 @@ export default function PolishScreen() {
           <View style={s.resultSection}>
             <Text style={s.sectionLabel}>POLISHED</Text>
             <View style={[s.resultBox, mode === 'business' ? s.resultBoxBiz : s.resultBoxCasual]}>
-              <Text style={[s.resultText, mode === 'business' ? s.resultTextBiz : s.resultTextCasual]}>
+              <SelectableText style={[s.resultText, mode === 'business' ? s.resultTextBiz : s.resultTextCasual]}>
                 {result.result}
-              </Text>
+              </SelectableText>
               <TouchableOpacity
                 style={s.playBtn}
                 onPress={() => playTTS(result.result)}
@@ -116,8 +128,18 @@ export default function PolishScreen() {
 
             <View style={s.explanationBox}>
               <Text style={s.explanationIcon}>💡</Text>
-              <Text style={s.explanationText}>{result.explanation}</Text>
+              <SelectableText style={s.explanationText}>{result.explanation}</SelectableText>
             </View>
+
+            <TouchableOpacity
+              style={[s.saveBtn, saved && s.saveBtnSaved]}
+              onPress={handleSave}
+              disabled={saved}
+            >
+              <Text style={[s.saveBtnText, saved && s.saveBtnTextSaved]}>
+                {saved ? '✓ Saved to Collection' : '⭐ Save to Collection'}
+              </Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -201,4 +223,16 @@ const s = StyleSheet.create({
   explanationText: { flex: 1, color: '#5a7a99', fontSize: 13, lineHeight: 20 },
   errorText: { color: '#ff6b6b', textAlign: 'center', marginTop: 20 },
   hint: { color: '#5a7a99', textAlign: 'center', marginTop: 32, fontSize: 14 },
+  saveBtn: {
+    marginTop: 8, paddingVertical: 14, borderRadius: 12,
+    backgroundColor: 'rgba(0,200,255,0.08)',
+    borderWidth: 1, borderColor: 'rgba(0,200,255,0.3)',
+    alignItems: 'center',
+  },
+  saveBtnSaved: {
+    backgroundColor: 'rgba(0,200,255,0.15)',
+    borderColor: '#00c8ff',
+  },
+  saveBtnText: { color: '#00c8ff', fontSize: 15, fontWeight: '600' },
+  saveBtnTextSaved: { color: '#00c8ff' },
 });
