@@ -7,12 +7,15 @@
     "dev": "node --watch src/index.js"
   },
   "dependencies": {
-    "express": "^4.19.2",
-    "multer": "^1.4.5-lts.1",
-    "ws": "^8.18.0",
-    "cors": "^2.8.5",
     "ali-oss": "^6.21.0",
+    "cors": "^2.8.5",
     "dotenv": "^16.4.5",
-    "mysql2": "^3.11.0"
+    "express": "^4.19.2",
+    "google-auth-library": "^10.6.2",
+    "https-proxy-agent": "^9.0.0",
+    "jsonwebtoken": "^9.0.3",
+    "multer": "^1.4.5-lts.1",
+    "mysql2": "^3.11.0",
+    "ws": "^8.18.0"
   }
 }

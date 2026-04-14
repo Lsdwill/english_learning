@@ -114,3 +114,18 @@ export async function removeFavoritedText(text: string): Promise<void> {
   set.delete(text);
   await AsyncStorage.setItem(FAVORITED_KEY, JSON.stringify([...set]));
 }
+
+// ── Auth token persistence ────────────────────────────────
+const TOKEN_KEY = 'speakai:auth_token';
+
+export async function saveAuthToken(token: string): Promise<void> {
+  await AsyncStorage.setItem(TOKEN_KEY, token);
+}
+
+export async function loadAuthToken(): Promise<string | null> {
+  return AsyncStorage.getItem(TOKEN_KEY);
+}
+
+export async function clearAuthToken(): Promise<void> {
+  await AsyncStorage.removeItem(TOKEN_KEY);
+}

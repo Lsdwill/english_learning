@@ -12,7 +12,7 @@ import {
   getPolishFavorites, deletePolishFavorite,
   getVocabulary, deleteVocabulary,
   synthesizeSpeech, getOssAudioCached,
-  Favorite, PolishFavorite, VocabularyItem,
+  Favorite, PolishFavorite, VocabularyItem, AuthError,
 } from '@/services/api';
 
 type Tab = 'expressions' | 'polish' | 'vocabulary';
@@ -28,30 +28,41 @@ export default function FavoritesScreen() {
 
   const [polishItems, setPolishItems] = useState<PolishFavorite[]>([]);
   const [loadingPolish, setLoadingPolish] = useState(false);
+  const [loadedPolish, setLoadedPolish] = useState(false);
 
   const [vocabItems, setVocabItems] = useState<VocabularyItem[]>([]);
   const [loadingVocab, setLoadingVocab] = useState(false);
 
+  const handleAuthError = useCallback((e: unknown) => {
+    if (e instanceof AuthError) {
+      Alert.alert('Sign in required', 'Please sign in to view your favorites.', [
+        { text: 'OK', onPress: () => router.push('/') },
+      ]);
+    } else {
+      console.warn(e);
+    }
+  }, [router]);
+
   useEffect(() => {
     getFavorites()
       .then(setFavItems)
-      .catch(e => console.warn(e))
+      .catch(handleAuthError)
       .finally(() => setLoadingFav(false));
   }, []);
 
   useEffect(() => {
-    if (tab === 'polish' && polishItems.length === 0) {
+    if (tab === 'polish' && !loadedPolish) {
       setLoadingPolish(true);
       getPolishFavorites()
         .then(setPolishItems)
-        .catch(e => console.warn(e))
-        .finally(() => setLoadingPolish(false));
+        .catch(handleAuthError)
+        .finally(() => { setLoadingPolish(false); setLoadedPolish(true); });
     }
     if (tab === 'vocabulary' && vocabItems.length === 0) {
       setLoadingVocab(true);
       getVocabulary()
         .then(setVocabItems)
-        .catch(e => console.warn(e))
+        .catch(handleAuthError)
         .finally(() => setLoadingVocab(false));
     }
   }, [tab]);

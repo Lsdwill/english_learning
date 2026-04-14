@@ -3,6 +3,26 @@ import * as Crypto from 'expo-crypto';
 
 export const SERVER_URL = 'http://192.168.1.8:3000';
 
+// Token store — set after login
+let _token: string | null = null;
+export function setAuthToken(token: string | null) { _token = token; }
+export function authHeaders(): Record<string, string> {
+  return _token
+    ? { 'Content-Type': 'application/json', Authorization: `Bearer ${_token}` }
+    : { 'Content-Type': 'application/json' };
+}
+
+export class AuthError extends Error {
+  constructor() { super('Please sign in to continue'); this.name = 'AuthError'; }
+}
+
+/** Throw AuthError on 401, generic Error otherwise */
+async function checkResponse(res: Response, label: string): Promise<Response> {
+  if (res.status === 401) throw new AuthError();
+  if (!res.ok) throw new Error(`${label} error ${res.status}`);
+  return res;
+}
+
 export interface LLMResult {
   ai_reply: string;
   grammar: string;
@@ -107,20 +127,20 @@ export async function getOssAudioUrl(ossKey: string): Promise<string> {  const r
 
 
 export async function createSession(): Promise<number> {
-  const res = await fetch(`${SERVER_URL}/sessions`, { method: 'POST' });
-  if (!res.ok) throw new Error(`createSession error ${res.status}`);
+  const res = await fetch(`${SERVER_URL}/sessions`, { method: 'POST', headers: authHeaders() });
+  await checkResponse(res, 'createSession');
   return (await res.json()).session_id;
 }
 
 export async function getSessions(): Promise<SessionSummary[]> {
-  const res = await fetch(`${SERVER_URL}/sessions`);
-  if (!res.ok) throw new Error(`getSessions error ${res.status}`);
+  const res = await fetch(`${SERVER_URL}/sessions`, { headers: authHeaders() });
+  await checkResponse(res, 'getSessions');
   return res.json();
 }
 
 export async function getSessionMessages(sessionId: number): Promise<DBMessage[]> {
-  const res = await fetch(`${SERVER_URL}/sessions/${sessionId}`);
-  if (!res.ok) throw new Error(`getSessionMessages error ${res.status}`);
+  const res = await fetch(`${SERVER_URL}/sessions/${sessionId}`, { headers: authHeaders() });
+  await checkResponse(res, 'getSessionMessages');
   return res.json();
 }
 
@@ -131,7 +151,7 @@ export async function saveMessage(params: {
 }): Promise<void> {
   await fetch(`${SERVER_URL}/messages`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(),
     body: JSON.stringify(params),
   });
 }
@@ -142,27 +162,27 @@ export async function addFavorite(params: {
 }): Promise<{ id: number; updated: boolean }> {
   const res = await fetch(`${SERVER_URL}/favorites`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(),
     body: JSON.stringify(params),
   });
-  if (!res.ok) throw new Error(`addFavorite error ${res.status}`);
+  await checkResponse(res, 'addFavorite');
   return res.json();
 }
 
 export async function getFavorites(): Promise<Favorite[]> {
-  const res = await fetch(`${SERVER_URL}/favorites`);
-  if (!res.ok) throw new Error(`getFavorites error ${res.status}`);
+  const res = await fetch(`${SERVER_URL}/favorites`, { headers: authHeaders() });
+  await checkResponse(res, 'getFavorites');
   return res.json();
 }
 
 export async function deleteFavorite(id: number): Promise<void> {
-  await fetch(`${SERVER_URL}/favorites/${id}`, { method: 'DELETE' });
+  await fetch(`${SERVER_URL}/favorites/${id}`, { method: 'DELETE', headers: authHeaders() });
 }
 
 export async function deleteFavoriteByText(userText: string): Promise<void> {
   await fetch(`${SERVER_URL}/favorites/by-text`, {
     method: 'DELETE',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(),
     body: JSON.stringify({ user_text: userText }),
   });
 }
@@ -219,21 +239,21 @@ export async function savePolishFavorite(params: {
 }): Promise<{ id: number }> {
   const res = await fetch(`${SERVER_URL}/polish-favorites`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(),
     body: JSON.stringify(params),
   });
-  if (!res.ok) throw new Error(`savePolishFavorite error ${res.status}`);
+  await checkResponse(res, 'savePolishFavorite');
   return res.json();
 }
 
 export async function getPolishFavorites(): Promise<PolishFavorite[]> {
-  const res = await fetch(`${SERVER_URL}/polish-favorites`);
-  if (!res.ok) throw new Error(`getPolishFavorites error ${res.status}`);
+  const res = await fetch(`${SERVER_URL}/polish-favorites`, { headers: authHeaders() });
+  await checkResponse(res, 'getPolishFavorites');
   return res.json();
 }
 
 export async function deletePolishFavorite(id: number): Promise<void> {
-  await fetch(`${SERVER_URL}/polish-favorites/${id}`, { method: 'DELETE' });
+  await fetch(`${SERVER_URL}/polish-favorites/${id}`, { method: 'DELETE', headers: authHeaders() });
 }
 
 // ── Vocabulary ────────────────────────────────────────────
@@ -260,19 +280,19 @@ export async function saveVocabulary(params: {
 }): Promise<{ id: number }> {
   const res = await fetch(`${SERVER_URL}/vocabulary`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(),
     body: JSON.stringify(params),
   });
-  if (!res.ok) throw new Error(`saveVocabulary error ${res.status}`);
+  await checkResponse(res, 'saveVocabulary');
   return res.json();
 }
 
 export async function getVocabulary(): Promise<VocabularyItem[]> {
-  const res = await fetch(`${SERVER_URL}/vocabulary`);
-  if (!res.ok) throw new Error(`getVocabulary error ${res.status}`);
+  const res = await fetch(`${SERVER_URL}/vocabulary`, { headers: authHeaders() });
+  await checkResponse(res, 'getVocabulary');
   return res.json();
 }
 
 export async function deleteVocabulary(id: number): Promise<void> {
-  await fetch(`${SERVER_URL}/vocabulary/${id}`, { method: 'DELETE' });
+  await fetch(`${SERVER_URL}/vocabulary/${id}`, { method: 'DELETE', headers: authHeaders() });
 }

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import pool from '../db.js';
+import { requireAuth } from '../middleware/auth.js';
 import { DASHSCOPE_API_KEY, LLM_URL, LLM_MODEL } from '../config.js';
 
 const router = Router();
@@ -12,7 +13,7 @@ Respond ONLY with this JSON (no markdown):
   "example": "One natural example sentence using this word or phrase"
 }`;
 
-// POST /vocabulary/explain
+// explain 不需要鉴权
 router.post('/explain', async (req, res) => {
   const { word } = req.body;
   if (!word) return res.status(400).json({ error: 'word required' });
@@ -37,19 +38,20 @@ router.post('/explain', async (req, res) => {
   }
 });
 
-// POST /vocabulary — save (upsert)
+router.use(requireAuth);
+
 router.post('/', async (req, res) => {
   const { word, explanation, example } = req.body;
   if (!word || !explanation) return res.status(400).json({ error: 'word and explanation required' });
   try {
     const [result] = await pool.query(
-      `INSERT INTO vocabulary (word, explanation, example)
-       VALUES (?, ?, ?)
+      `INSERT INTO vocabulary (user_id, word, explanation, example)
+       VALUES (?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE explanation = VALUES(explanation), example = VALUES(example), created_at = CURRENT_TIMESTAMP`,
-      [word, explanation, example ?? null]
+      [req.user.userId, word, explanation, example ?? null]
     );
     const id = result.insertId || (await pool.query(
-      'SELECT id FROM vocabulary WHERE word_hash = SHA2(?, 256)', [word]
+      'SELECT id FROM vocabulary WHERE word_hash = SHA2(?, 256) AND user_id = ?', [word, req.user.userId]
     ))[0][0]?.id;
     res.json({ id });
   } catch (e) {
@@ -57,20 +59,21 @@ router.post('/', async (req, res) => {
   }
 });
 
-// GET /vocabulary
-router.get('/', async (_req, res) => {
+router.get('/', async (req, res) => {
   try {
-    const [rows] = await pool.query('SELECT * FROM vocabulary ORDER BY created_at DESC');
+    const [rows] = await pool.query(
+      'SELECT * FROM vocabulary WHERE user_id = ? ORDER BY created_at DESC',
+      [req.user.userId]
+    );
     res.json(rows);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-// DELETE /vocabulary/:id
 router.delete('/:id', async (req, res) => {
   try {
-    await pool.query('DELETE FROM vocabulary WHERE id = ?', [req.params.id]);
+    await pool.query('DELETE FROM vocabulary WHERE id = ? AND user_id = ?', [req.params.id, req.user.userId]);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });

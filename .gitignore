@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+speakai/node_modules/
+speakai-server/node_modules/
+
+# Environment variables
+.env
+speakai-server/.env
+
+# Expo
+speakai/.expo/
+speakai/dist/
+
+# Android build artifacts
+speakai/android/build/
+speakai/android/app/build/
+speakai/android/.gradle/
+speakai/android/.kotlin/
+speakai/android/app/.cxx/
+speakai/android/local.properties
+speakai/android/.idea/
+*.apk
+*.aab
+
+# iOS
+speakai/ios/Pods/
+speakai/ios/build/
+speakai/ios/*.xcworkspace/xcuserdata/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Google OAuth secret
+client_secret_*.json

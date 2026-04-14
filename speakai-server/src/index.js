@@ -12,6 +12,7 @@ import summarizeRouter from './routes/summarize.js';
 import polishRouter from './routes/polish.js';
 import polishFavoritesRouter from './routes/polishFavorites.js';
 import vocabularyRouter from './routes/vocabulary.js';
+import authRouter from './routes/auth.js';
 import { startCleanupJob } from './jobs/cleanupAudio.js';
 
 const app = express();
@@ -32,6 +33,7 @@ app.use('/summarize', summarizeRouter);
 app.use('/polish', polishRouter);
 app.use('/polish-favorites', polishFavoritesRouter);
 app.use('/vocabulary', vocabularyRouter);
+app.use('/auth', authRouter);
 
 app.listen(PORT, () => {
   console.log(`SpeakAI server running on http://0.0.0.0:${PORT}`);

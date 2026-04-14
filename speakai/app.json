@@ -5,14 +5,28 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "scheme": "speakai",
-    "platforms": ["android"],
+    "platforms": [
+      "android"
+    ],
     "android": {
-      "package": "com.speakai.app",
-      "permissions": ["RECORD_AUDIO", "INTERNET"]
+      "package": "com.ink.englishlearning",
+      "permissions": [
+        "RECORD_AUDIO",
+        "INTERNET"
+      ]
     },
     "plugins": [
       "expo-router",
-      ["expo-av", { "microphonePermission": "SpeakAI needs microphone access for voice input." }]
+      [
+        "expo-av",
+        {
+          "microphonePermission": "SpeakAI needs microphone access for voice input."
+        }
+      ],
+      [
+        "@react-native-google-signin/google-signin"
+      ],
+      "expo-web-browser"
     ]
   }
 }

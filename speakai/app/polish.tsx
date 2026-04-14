@@ -1,11 +1,11 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  StatusBar, ScrollView, ActivityIndicator,
+  StatusBar, ScrollView, ActivityIndicator, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { polishText, synthesizeSpeech, savePolishFavorite } from '@/services/api';
+import { polishText, synthesizeSpeech, savePolishFavorite, AuthError } from '@/services/api';
 import { Audio } from 'expo-av';
 import SelectableText from '@/components/SelectableText';
 
@@ -40,11 +40,21 @@ export default function PolishScreen() {
 
   const handleSave = useCallback(async () => {
     if (!result || !text) return;
-    await savePolishFavorite({
-      original: text, polished: result.result, explanation: result.explanation,
-      mode, user_oss_key: ossKey ?? undefined,
-    });
-    setSaved(true);
+    try {
+      await savePolishFavorite({
+        original: text, polished: result.result, explanation: result.explanation,
+        mode, user_oss_key: ossKey ?? undefined,
+      });
+      setSaved(true);
+    } catch (e: any) {
+      if (e instanceof AuthError) {
+        Alert.alert('Sign in required', 'Please sign in to save favorites.', [
+          { text: 'OK', onPress: () => router.push('/') },
+        ]);
+      } else {
+        setError(e.message ?? 'Failed to save');
+      }
+    }
   }, [result, text, mode, ossKey]);
 
   const playTTS = useCallback(async (t: string) => {
